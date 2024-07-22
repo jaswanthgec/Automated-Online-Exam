@@ -15,8 +15,8 @@ c.execute('''
 ''')
 conn.commit()
 
-# The master admin password
-MASTER_ADMIN_PASSWORD = "admin_secret"
+# The master teacher password
+MASTER_TEACHER_PASSWORD = "teacher_secret"
 
 # Function to verify credentials
 def verify_credentials(username, password):
@@ -34,6 +34,41 @@ def add_user(username, password, role):
         return True
     except sqlite3.IntegrityError:
         return False
+
+# Placeholder pages for students
+def student_quiz():
+    st.write("Student Quiz Page")
+
+def student_sample_quiz():
+    st.write("Student Sample Quiz Page")
+
+def student_previous_scores():
+    st.write("Student Previous Scores Page")
+
+def student_profile():
+    st.write("Student Profile Page")
+
+# Placeholder pages for teachers
+def teacher_create_quiz():
+    st.write("Teacher Create Quiz Page")
+
+def teacher_create_team():
+    st.write("Teacher Create Team Page")
+
+def teacher_results():
+    st.write("Teacher Results Page")
+
+def teacher_exam_history():
+    st.write("Teacher Exam History Page")
+
+def teacher_sample_quiz():
+    st.write("Teacher Sample Quiz Page")
+
+def teacher_profile():
+    st.write("Teacher Profile Page")
+
+def teacher_help():
+    st.write("Teacher Help Page")
 
 # Main function to run the app
 def main():
@@ -72,20 +107,53 @@ def main():
     with tabs[1]:
         new_username = st.text_input("New Username", key="signup_username")
         new_password = st.text_input("New Password", type="password", key="signup_password")
-        role = st.selectbox("Role", ["user", "admin"], key="signup_role")
-        if role == "admin":
-            admin_password = st.text_input("Admin Password", type="password", key="admin_password")
+        role = st.selectbox("Role", ["student", "teacher"], key="signup_role")
+        if role == "teacher":
+            teacher_password = st.text_input("Teacher Password", type="password", key="teacher_password")
         else:
-            admin_password = None
+            teacher_password = None
 
         if st.button("Signup"):
-            if role == "admin" and admin_password != MASTER_ADMIN_PASSWORD:
-                st.error("Invalid admin password")
+            if role == "teacher" and teacher_password != MASTER_TEACHER_PASSWORD:
+                st.error("Invalid teacher password")
             else:
                 if add_user(new_username, new_password, role):
                     st.success(f"User {new_username} registered successfully as {role}")
                 else:
                     st.error("Username already taken")
+
+    # Display navigation based on role
+    if st.session_state.logged_in:
+        role = st.session_state.role
+        if role == "student":
+            student_nav()
+        elif role == "teacher":
+            teacher_nav()
+
+def student_nav():
+    # Student-specific navigation
+    pages = {
+        "Quiz with Code": student_quiz,
+        "Sample Quiz": student_sample_quiz,
+        "Previous Exam Scores": student_previous_scores,
+        "Profile": student_profile
+    }
+    page = st.sidebar.selectbox("Select a page", list(pages.keys()))
+    pages[page]()
+
+def teacher_nav():
+    # Teacher-specific navigation
+    pages = {
+        "Create Quiz": teacher_create_quiz,
+        "Create Team": teacher_create_team,
+        "Results": teacher_results,
+        "Previous Exams History": teacher_exam_history,
+        "Sample Quiz": teacher_sample_quiz,
+        "Profile": teacher_profile,
+        "Help": teacher_help
+    }
+    page = st.sidebar.selectbox("Select a page", list(pages.keys()))
+    pages[page]()
 
 if __name__ == "__main__":
     main()

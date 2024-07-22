@@ -7,7 +7,7 @@ import os
 load_dotenv()
 
 # Get GitHub token from environment variable
-GITHUB_TOKEN = os.getenv('GITHUB_TOKEN')
+GITHUB_TOKEN = os.getenv('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')
 
 # Connect to SQLite database (or create it)
 conn = sqlite3.connect('users.db')

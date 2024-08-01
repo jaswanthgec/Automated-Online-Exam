@@ -1,180 +1,245 @@
-import sqlite3
 import streamlit as st
-from dotenv import load_dotenv
-import os
+import cv2
+import threading
+import mediapipe as mp
+import sounddevice as sd
+import numpy as np
+from scipy.ndimage import uniform_filter1d
 
-# Load environment variables from .env file
-load_dotenv()
+# Streamlit Page Configuration
+st.set_page_config(page_title="Automated Online Proctoring", page_icon=":tada:", layout="wide")
 
-# Get GitHub token from environment variable
-GITHUB_TOKEN = os.getenv('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')
+# Global Variables
+X_AXIS_CHEAT = 0
+Y_AXIS_CHEAT = 0
+AUDIO_CHEAT = 0
+SOUND_AMPLITUDE = 0
+STOP_FLAG = False
+PEAK_COUNT = 0
+PEAK_THRESHOLD = 2
+PEAK_MAX_REACHED_COUNT = 5
+MULTI_FACE_COUNT = 0
+NO_FACE_COUNT = 0
 
-# Connect to SQLite database (or create it)
-conn = sqlite3.connect('users.db')
-c = conn.cursor()
+MULTI_FACE_THRESHOLD = 3
+NO_FACE_THRESHOLD = 20
 
-# Create users table
-c.execute('''
-    CREATE TABLE IF NOT EXISTS users (
-        username TEXT PRIMARY KEY,
-        password TEXT,
-        role TEXT
-    )
-''')
-conn.commit()
+# Initialize session state variables
+if 'capturing' not in st.session_state:
+    st.session_state.capturing = False
 
-# The master teacher password
-MASTER_TEACHER_PASSWORD = "teacher_secret"
+# Helper Function to calculate head pose
+def calculate_head_pose(face_2d, face_3d, img_w, img_h, image, nose_2d, nose_3d):
+    global X_AXIS_CHEAT, Y_AXIS_CHEAT
 
-# Function to verify credentials
-def verify_credentials(username, password):
-    c.execute("SELECT role FROM users WHERE username=? AND password=?", (username, password))
-    result = c.fetchone()
-    if result:
-        return result[0]
-    return None
+    face_2d = np.array(face_2d, dtype=np.float64)
+    face_3d = np.array(face_3d, dtype=np.float64)
+    focal_length = 1 * img_w
+    cam_matrix = np.array([[focal_length, 0, img_h / 2],
+                           [0, focal_length, img_w / 2],
+                           [0, 0, 1]])
+    dist_matrix = np.zeros((4, 1), dtype=np.float64)
+    success, rot_vec, trans_vec = cv2.solvePnP(face_3d, face_2d, cam_matrix, dist_matrix)
+    rmat, _ = cv2.Rodrigues(rot_vec)
+    angles, _, _, _, _, _ = cv2.RQDecomp3x3(rmat)
 
-# Function to add a new user
-def add_user(username, password, role):
+    x = angles[0] * 360
+    y = angles[1] * 360
+
+    X_AXIS_CHEAT = 1 if y < -10 or y > 10 else 0
+    Y_AXIS_CHEAT = 1 if x < -5 else 0
+
+    nose_3d_projection, _ = cv2.projectPoints(nose_3d, rot_vec, trans_vec, cam_matrix, dist_matrix)
+    p1 = (int(nose_2d[0]), int(nose_2d[1]))
+    p2 = (int(nose_3d_projection[0][0][0]), int(nose_3d_projection[0][0][1]))
+    cv2.line(image, p1, p2, (255, 0, 0), 2)
+    cv2.putText(image, f"X: {int(x)}, Y: {int(y)}", (20, 20), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
+
+# Generator Function to get head pose
+def get_head_pose():
+    global X_AXIS_CHEAT, Y_AXIS_CHEAT, MULTI_FACE_COUNT, NO_FACE_COUNT, STOP_FLAG
+    mp_face_mesh = mp.solutions.face_mesh
+    face_mesh = mp_face_mesh.FaceMesh(min_detection_confidence=0.5, min_tracking_confidence=0.5)
+    cap = cv2.VideoCapture(0)
+    mp_drawing = mp.solutions.drawing_utils
+
+    if not cap.isOpened():
+        st.error("Error: Could not open video device.")
+        return
+
     try:
-        c.execute("INSERT INTO users (username, password, role) VALUES (?, ?, ?)", (username, password, role))
-        conn.commit()
-        return True
-    except sqlite3.IntegrityError:
-        return False
+        while not STOP_FLAG:
+            success, image = cap.read()
+            if not success:
+                break
 
-# Placeholder pages for students
-def student_quiz():
-    st.write("Student Quiz Page")
+            image = cv2.cvtColor(cv2.flip(image, 1), cv2.COLOR_BGR2RGB)
+            image.flags.writeable = False
+            results = face_mesh.process(image)
+            image.flags.writeable = True
+            image = cv2.cvtColor(image, cv2.COLOR_RGB2BGR)
 
-def student_sample_quiz():
-    st.write("Student Sample Quiz Page")
+            img_h, img_w, _ = image.shape
+            face_3d, face_2d = [], []
+            face_ids = [33, 263, 1, 61, 291, 199]
 
-def student_previous_scores():
-    st.write("Student Previous Scores Page")
-
-def student_profile():
-    st.write("Student Profile Page")
-
-# Placeholder pages for teachers
-def teacher_create_quiz():
-    st.write("Teacher Create Quiz Page")
-
-def teacher_create_team():
-    st.write("Teacher Create Team Page")
-
-def teacher_results():
-    st.write("Teacher Results Page")
-
-def teacher_exam_history():
-    st.write("Teacher Exam History Page")
-
-def teacher_sample_quiz():
-    st.write("Teacher Sample Quiz Page")
-
-def teacher_profile():
-    st.write("Teacher Profile Page")
-
-def teacher_help():
-    st.write("Teacher Help Page")
-
-# Main function to run the app
-def main():
-    # Set the title of the app
-    st.title("Login and Signup Page")
-
-    # Create a session state for login status and role
-    if 'logged_in' not in st.session_state:
-        st.session_state.logged_in = False
-    if 'role' not in st.session_state:
-        st.session_state.role = None
-
-    if not st.session_state.logged_in:
-        # Tabs for Login and Signup
-        tabs = st.tabs(["Login", "Signup"])
-
-        # Login tab
-        with tabs[0]:
-            username = st.text_input("Username", key="login_username")
-            password = st.text_input("Password", type="password", key="login_password")
-            if st.button("Login"):
-                role = verify_credentials(username, password)
-                if role:
-                    st.session_state.logged_in = True
-                    st.session_state.role = role
-                    st.session_state.page = "Home"
-                    st.success(f"Login successful as {role}")
+            if results.multi_face_landmarks:
+                if len(results.multi_face_landmarks) > 1:
+                    MULTI_FACE_COUNT += 1
+                    NO_FACE_COUNT = 0
+                    st.warning("Multiple faces detected!")
                 else:
-                    st.error("Invalid username or password")
+                    MULTI_FACE_COUNT = 0
 
-        # Signup tab
-        with tabs[1]:
-            new_username = st.text_input("New Username", key="signup_username")
-            new_password = st.text_input("New Password", type="password", key="signup_password")
-            role = st.selectbox("Role", ["student", "teacher"], key="signup_role")
-            if role == "teacher":
-                teacher_password = st.text_input("Teacher Password", type="password", key="teacher_password")
+                for face_landmarks in results.multi_face_landmarks:
+                    mp_drawing.draw_landmarks(
+                        image=image,
+                        landmark_list=face_landmarks,
+                        connections=mp_face_mesh.FACEMESH_CONTOURS,
+                        landmark_drawing_spec=None)
+
+                    for idx, lm in enumerate(face_landmarks.landmark):
+                        if idx in face_ids:
+                            if idx == 1:
+                                nose_2d = (lm.x * img_w, lm.y * img_h)
+                                nose_3d = (lm.x * img_w, lm.y * img_h, lm.z * 8000)
+
+                            x, y = int(lm.x * img_w), int(lm.y * img_h)
+                            face_2d.append([x, y])
+                            face_3d.append([x, y, lm.z])
+
+                    if face_2d and face_3d:
+                        calculate_head_pose(face_2d, face_3d, img_w, img_h, image, nose_2d, nose_3d)
             else:
-                teacher_password = None
+                NO_FACE_COUNT += 1
+                MULTI_FACE_COUNT = 0
+                st.warning("No face detected!")
 
-            if st.button("Signup"):
-                if role == "teacher" and teacher_password != MASTER_TEACHER_PASSWORD:
-                    st.error("Invalid teacher password")
-                else:
-                    if add_user(new_username, new_password, role):
-                        st.success(f"User {new_username} registered successfully as {role}")
-                    else:
-                        st.error("Username already taken")
+            if MULTI_FACE_COUNT >= MULTI_FACE_THRESHOLD:
+                st.error("Multiple faces detected too many times. The application will close.")
+                st.session_state.capturing = False
+                STOP_FLAG = True
 
-    if st.session_state.logged_in:
-        role = st.session_state.role
+            if NO_FACE_COUNT >= NO_FACE_THRESHOLD:
+                st.error("No face detected too many times. The application will close.")
+                st.session_state.capturing = False
+                STOP_FLAG = True
 
-        if st.button("Logout", key="logout_button"):
-            st.session_state.logged_in = False
-            st.session_state.role = None
-            st.experimental_rerun()
+            image_rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+            yield image_rgb, X_AXIS_CHEAT, Y_AXIS_CHEAT
+    finally:
+        cap.release()
 
-        if role == "student":
-            student_nav()
-        elif role == "teacher":
-            teacher_nav()
+# Function to analyze audio
+def get_audio_analysis():
+    global AUDIO_CHEAT, SOUND_AMPLITUDE, STOP_FLAG
 
-def student_nav():
-    # Student-specific navigation
-    pages = {
-        "Quiz with Code": student_quiz,
-        "Sample Quiz": student_sample_quiz,
-        "Previous Exam Scores": student_previous_scores,
-        "Profile": student_profile
-    }
-    st.sidebar.title("Student Navigation")
-    for page_name, page_func in pages.items():
-        if st.sidebar.button(page_name):
-            st.session_state.page = page_name
+    CALLBACKS_PER_SECOND = 38
+    SUS_FINDING_FREQUENCY = 2
+    SOUND_AMPLITUDE_THRESHOLD = 20
+    FRAMES_COUNT = int(CALLBACKS_PER_SECOND / SUS_FINDING_FREQUENCY)
+    AMPLITUDE_LIST = list([0] * FRAMES_COUNT)
+    SUS_COUNT = 0
+    count = 0
 
-    # Display the selected page
-    if 'page' in st.session_state:
-        pages[st.session_state.page]()
+    def print_sound(indata, outdata, frames, time, status):
+        nonlocal count, SUS_COUNT
+        global SOUND_AMPLITUDE, AUDIO_CHEAT
 
-def teacher_nav():
-    # Teacher-specific navigation
-    pages = {
-        "Create Quiz": teacher_create_quiz,
-        "Create Team": teacher_create_team,
-        "Results": teacher_results,
-        "Previous Exams History": teacher_exam_history,
-        "Sample Quiz": teacher_sample_quiz,
-        "Profile": teacher_profile,
-        "Help": teacher_help
-    }
-    st.sidebar.title("Teacher Navigation")
-    for page_name, page_func in pages.items():
-        if st.sidebar.button(page_name):
-            st.session_state.page = page_name
+        vnorm = int(np.linalg.norm(indata) * 10)
+        AMPLITUDE_LIST.append(vnorm)
+        count += 1
+        AMPLITUDE_LIST.pop(0)
+        if count == FRAMES_COUNT:
+            avg_amp = sum(AMPLITUDE_LIST) / FRAMES_COUNT
+            SOUND_AMPLITUDE = avg_amp
+            if SUS_COUNT >= 2:
+                AUDIO_CHEAT = 1
+                SUS_COUNT = 0
+            if avg_amp > SOUND_AMPLITUDE_THRESHOLD:
+                SUS_COUNT += 1
+            else:
+                SUS_COUNT = 0
+                AUDIO_CHEAT = 0
+            count = 0
 
-    # Display the selected page
-    if 'page' in st.session_state:
-        pages[st.session_state.page]()
+    with sd.Stream(callback=print_sound):
+        while not STOP_FLAG:
+            sd.sleep(1000)
 
-if __name__ == "__main__":
-    main()
+# Function to update cheat probability
+def update_cheat_probability(current_prob, head_x_cheat, head_y_cheat, audio_cheat):
+    max_increase = 0.01
+    max_decrease = 0.005
+    cheat_detected = head_x_cheat or head_y_cheat or audio_cheat
+
+    if cheat_detected:
+        current_prob = min(current_prob + max_increase, PEAK_THRESHOLD)
+    else:
+        current_prob = max(current_prob - max_decrease, 0.0)
+
+    return current_prob
+
+# Function to check peak and warn user
+def check_peak_and_warn(current_prob):
+    global PEAK_COUNT
+
+    if current_prob >= PEAK_THRESHOLD:
+        PEAK_COUNT += 1
+        st.warning("Don't cheat! This is warning number {}.".format(PEAK_COUNT))
+        current_prob = 0.0  # Reset the cheat probability
+
+        if PEAK_COUNT >= PEAK_MAX_REACHED_COUNT:
+            st.error("Cheating detected too many times. The application will close.")
+            st.session_state.capturing = False
+            st.stop()
+    return current_prob
+
+# Streamlit Application
+st.markdown("<h1 style='text-align: center;'>Automatic Online Proctoring System</h1>", unsafe_allow_html=True)
+
+c1, c2, c3 = st.columns([8, 5, 5])
+
+# Create buttons to start and stop capturing
+if c2.button("Start the Exam"):
+    st.session_state.capturing = True
+    STOP_FLAG = False
+
+if c2.button("Submit Exam"):
+    st.session_state.capturing = False
+    STOP_FLAG = True
+
+col1, col2 = st.columns(2)
+video_placeholder = col1.empty()
+cheat_chart_placeholder = col2.empty()
+cheat_probability_data = []
+current_cheat_probability = 0.0
+
+if st.session_state.capturing:
+    audio_thread = threading.Thread(target=get_audio_analysis, daemon=True)
+    audio_thread.start()
+
+    frame_generator = get_head_pose()
+
+    try:
+        while st.session_state.capturing:
+            try:
+                image, x_cheat, y_cheat = next(frame_generator)
+                video_placeholder.image(image, channels="RGB")
+                current_cheat_probability = update_cheat_probability(current_cheat_probability, x_cheat, y_cheat, AUDIO_CHEAT)
+                current_cheat_probability = check_peak_and_warn(current_cheat_probability)
+                cheat_probability_data.append(current_cheat_probability)
+
+                if len(cheat_probability_data) > 100:
+                    cheat_probability_data.pop(0)
+
+                smoothed_data = uniform_filter1d(cheat_probability_data, size=5)
+                cheat_chart_placeholder.line_chart(smoothed_data)
+            except StopIteration:
+                break
+    finally:
+        STOP_FLAG = True
+        audio_thread.join()
+else:
+    video_placeholder.empty()
+    cheat_chart_placeholder.empty()

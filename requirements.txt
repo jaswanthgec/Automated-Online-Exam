@@ -1,6 +1,6 @@
 streamlit==1.20.0
-opencv-python-headless==4.8.0.74
+opencv-python==4.6.0.66
 mediapipe==0.10.0
+sounddevice==0.4.6
 numpy==1.24.4
-scipy==1.11.1
-pydub==0.25.1
+scipy==1.10.1

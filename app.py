@@ -1,3 +1,4 @@
-import sys
+import cv2
 import streamlit as st
-st.write("Python version:", sys.version)
+
+st.write("Imports successful!")

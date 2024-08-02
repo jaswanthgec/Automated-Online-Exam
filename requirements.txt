@@ -1,1 +1,6 @@
-streamlit==1.15.0
+streamlit
+opencv-python-headless
+mediapipe
+numpy
+scipy
+sounddevice

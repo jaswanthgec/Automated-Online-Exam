@@ -1,5 +1,3 @@
-# test_imports.py
-import cv2
+import sys
 import streamlit as st
-
-st.write("Imports successful!")
+st.write("Python version:", sys.version)

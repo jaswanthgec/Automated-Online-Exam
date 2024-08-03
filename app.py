@@ -1,4 +1,9 @@
 import streamlit as st
+import threading
+import numpy as np
+import time
+from scipy.ndimage import uniform_filter1d
+import os
 import logging
 
 # Configure logging
@@ -27,27 +32,11 @@ def check_imports():
         return False
 
     try:
-        import numpy as np
-        logger.debug("numpy imported successfully.")
-    except ImportError as e:
-        logger.error("Error importing numpy: %s", e)
-        st.error("Error importing numpy. Please ensure numpy is installed.")
-        return False
-
-    try:
         import sounddevice as sd
         logger.debug("sounddevice imported successfully.")
     except ImportError as e:
         logger.error("Error importing sounddevice: %s", e)
         st.error("Error importing sounddevice. Please ensure sounddevice is installed.")
-        return False
-
-    try:
-        from scipy.ndimage import uniform_filter1d
-        logger.debug("scipy imported successfully.")
-    except ImportError as e:
-        logger.error("Error importing scipy: %s", e)
-        st.error("Error importing scipy. Please ensure scipy is installed.")
         return False
 
     return True
@@ -65,11 +54,11 @@ if check_imports():
     def capture_video():
         import cv2
         import mediapipe as mp
-        
+
         mp_face_mesh = mp.solutions.face_mesh
         face_mesh = mp_face_mesh.FaceMesh(min_detection_confidence=0.5, min_tracking_confidence=0.5)
         cap = cv2.VideoCapture(0)
-        
+
         if not cap.isOpened():
             alert_placeholder.error("Error: Could not open video device.")
             return

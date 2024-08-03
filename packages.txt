@@ -4,3 +4,4 @@ libxrender1
 libxext6
 libatlas-base-dev
 libgl1-mesa-glx
+portaudio19-dev

@@ -84,14 +84,14 @@ def get_lip_distance(lip_landmarks):
     return distance
 
 # Generator Function to get head pose and lip movement
-def get_head_pose_and_lip_movement():
+def get_head_pose_and_lip_movement(video_source):
     global X_AXIS_CHEAT, Y_AXIS_CHEAT, MULTI_FACE_COUNT, NO_FACE_COUNT, STOP_FLAG
     global LIP_ALERT_COUNT, LIP_THRESHOLD
     global lip_alert_reset_timer
 
     mp_face_mesh = mp.solutions.face_mesh
     face_mesh = mp_face_mesh.FaceMesh(min_detection_confidence=0.5, min_tracking_confidence=0.5)
-    cap = cv2.VideoCapture(0)
+    cap = cv2.VideoCapture(video_source)
     mp_drawing = mp.solutions.drawing_utils
 
     if not cap.isOpened():
@@ -194,7 +194,7 @@ def get_head_pose_and_lip_movement():
                 STOP_FLAG = True
 
             image_rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-            yield image_rgb, X_AXIS_CHEAT, Y_AXIS_CHEAT
+            yield image_rgb, X_AXIS_CHEAT,Y_AXIS_CHEAT
     finally:
         cap.release()
         cv2.destroyAllWindows()
@@ -291,28 +291,31 @@ if st.session_state.capturing:
         audio_thread = threading.Thread(target=get_audio_analysis, daemon=True)
         audio_thread.start()
 
-    frame_generator = get_head_pose_and_lip_movement()
+    video_source = 0 if not IS_STREAMLIT_CLOUD else st.file_uploader("Upload a video file", type=["mp4", "mov", "avi"])
 
-    try:
-        while st.session_state.capturing:
-            try:
-                image, x_cheat, y_cheat = next(frame_generator)
-                video_placeholder.image(image, channels="RGB")
-                current_cheat_probability = update_cheat_probability(current_cheat_probability, x_cheat, y_cheat, AUDIO_CHEAT)
-                current_cheat_probability = check_peak_and_warn(current_cheat_probability)
-                cheat_probability_data.append(current_cheat_probability)
+    if video_source:
+        frame_generator = get_head_pose_and_lip_movement(video_source)
 
-                if len(cheat_probability_data) > 100:
-                    cheat_probability_data.pop(0)
+        try:
+            while st.session_state.capturing:
+                try:
+                    image, x_cheat, y_cheat = next(frame_generator)
+                    video_placeholder.image(image, channels="RGB")
+                    current_cheat_probability = update_cheat_probability(current_cheat_probability, x_cheat, y_cheat, AUDIO_CHEAT)
+                    current_cheat_probability = check_peak_and_warn(current_cheat_probability)
+                    cheat_probability_data.append(current_cheat_probability)
 
-                smoothed_data = uniform_filter1d(cheat_probability_data, size=5)
-                cheat_chart_placeholder.line_chart(smoothed_data)
-            except StopIteration:
-                break
-    finally:
-        STOP_FLAG = True
-        if not IS_STREAMLIT_CLOUD:
-            audio_thread.join()
+                    if len(cheat_probability_data) > 100:
+                        cheat_probability_data.pop(0)
+
+                    smoothed_data = uniform_filter1d(cheat_probability_data, size=5)
+                    cheat_chart_placeholder.line_chart(smoothed_data)
+                except StopIteration:
+                    break
+        finally:
+            STOP_FLAG = True
+            if not IS_STREAMLIT_CLOUD:
+                audio_thread.join()
 else:
     video_placeholder.empty()
     cheat_chart_placeholder.empty()
